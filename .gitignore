@@ -1,0 +1,50 @@
+# Build artifacts
+*.apk
+*.aar
+*.ap_
+*.aab
+*.dex
+*.class
+bin/
+gen/
+out/
+build/
+/*/build/
+
+# Kotlin/Java
+*.iml
+*.ipr
+*.iws
+.idea/
+.gradle/
+build/
+
+# Local configuration
+local.properties
+secrets.properties
+
+# Android Studio
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Captures
+captures/
+
+# External Native Build
+.externalNativeBuild/
+.cxx/
+
+# Lint
+lint/intermediate/
+lint/generated/
+
+# Log files
+*.log
