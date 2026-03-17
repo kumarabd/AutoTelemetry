@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "536682372366",
+    "project_id": "telemetry-ec5aa",
+    "storage_bucket": "telemetry-ec5aa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:536682372366:android:805b88d1adf2634db38b5f",
+        "android_client_info": {
+          "package_name": "org.nighthawklabs.telemetry"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDT4yercB-Zg4nN8AGFblmZyurAViGlHVE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

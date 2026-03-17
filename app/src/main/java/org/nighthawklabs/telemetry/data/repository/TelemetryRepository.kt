@@ -1,0 +1,126 @@
+package org.nighthawklabs.telemetry.data.repository
+
+import android.util.Log
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import org.nighthawklabs.telemetry.data.local.TelemetryDao
+import org.nighthawklabs.telemetry.data.local.TelemetryEntity
+import org.nighthawklabs.telemetry.domain.SyncStatus
+import org.nighthawklabs.telemetry.domain.TelemetryBatch
+import org.nighthawklabs.telemetry.domain.TelemetryRecord
+import org.nighthawklabs.telemetry.model.VehicleData
+import java.util.UUID
+
+private const val TAG = "TelemetryRepository"
+
+interface ITelemetryRepository {
+    suspend fun saveReading(vehicleData: VehicleData)
+    fun observeLatestTelemetry(): Flow<TelemetryRecord?>
+    fun observePendingCount(): Flow<Int>
+    suspend fun getPendingBatch(limit: Int = 100): TelemetryBatch?
+    suspend fun markBatchSyncing(batch: TelemetryBatch)
+    suspend fun markBatchSynced(batch: TelemetryBatch)
+    suspend fun markBatchFailed(batch: TelemetryBatch)
+    suspend fun getTelemetryForTrip(tripId: String): List<TelemetryRecord>
+}
+
+class TelemetryRepository(
+    private val dao: TelemetryDao
+) : ITelemetryRepository {
+
+    private companion object {
+        // If records stay in SYNCING longer than this, treat them as FAILED
+        private const val SYNCING_STALE_TIMEOUT_MS: Long = 5 * 60 * 1000 // 5 minutes
+    }
+
+    override suspend fun saveReading(vehicleData: VehicleData) {
+        val now = System.currentTimeMillis()
+        val record = TelemetryRecord(
+            id = UUID.randomUUID().toString(),
+            timestamp = vehicleData.timestamp,
+            rpm = vehicleData.rpm,
+            speed = vehicleData.speed,
+            coolantTemp = vehicleData.coolantTemp,
+            latitude = null,
+            longitude = null,
+            ignitionOn = null,
+            vehicleId = vehicleData.vehicleId,
+            source = "obd_android_app",
+            syncStatus = SyncStatus.PENDING,
+            createdAt = now,
+            updatedAt = now
+        )
+
+        try {
+            dao.insert(TelemetryEntity.fromDomain(record))
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save telemetry reading", e)
+        }
+    }
+
+    override fun observeLatestTelemetry(): Flow<TelemetryRecord?> =
+        dao.observeLatestTelemetry()
+            .map { it?.toDomain() }
+
+    override fun observePendingCount(): Flow<Int> =
+        dao.observePendingCount()
+
+    override suspend fun getPendingBatch(limit: Int): TelemetryBatch? {
+        return try {
+            val now = System.currentTimeMillis()
+            // Recover any records stuck in SYNCING for too long so they can be retried.
+            val staleBefore = now - SYNCING_STALE_TIMEOUT_MS
+            dao.resetStuckSyncing(now = now, staleBefore = staleBefore)
+
+            val entities = dao.getPendingRecords(limit)
+            if (entities.isEmpty()) return null
+            val records = entities.map { it.toDomain() }
+            TelemetryBatch(
+                batchId = UUID.randomUUID().toString(),
+                records = records,
+                createdAt = System.currentTimeMillis()
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load pending batch", e)
+            null
+        }
+    }
+
+    override suspend fun markBatchSyncing(batch: TelemetryBatch) {
+        val ids = batch.records.map { it.id }
+        try {
+            val now = System.currentTimeMillis()
+            dao.markRecordsSyncing(ids, now)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to mark batch syncing", e)
+        }
+    }
+
+    override suspend fun markBatchSynced(batch: TelemetryBatch) {
+        val ids = batch.records.map { it.id }
+        try {
+            val now = System.currentTimeMillis()
+            dao.markRecordsSynced(ids, now)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to mark batch synced", e)
+        }
+    }
+
+    override suspend fun markBatchFailed(batch: TelemetryBatch) {
+        val ids = batch.records.map { it.id }
+        try {
+            val now = System.currentTimeMillis()
+            dao.markRecordsFailed(ids, now)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to mark batch failed", e)
+        }
+    }
+
+    override suspend fun getTelemetryForTrip(tripId: String): List<TelemetryRecord> =
+        try {
+            dao.getTelemetryForTrip(tripId).map { it.toDomain() }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load telemetry for trip $tripId", e)
+            emptyList()
+        }
+}

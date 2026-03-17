@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AutoTelemetry</string>
+
+    <!-- Trip / analytics strings -->
+    <string name="trip_summary_missing">Trip summary unavailable.</string>
+    <string name="trip_metrics_missing">No telemetry metrics available for this trip.</string>
+    <string name="driving_events_none">No notable driving events.</string>
+    <string name="vehicle_alerts_none">No vehicle alerts detected.</string>
+</resources>
