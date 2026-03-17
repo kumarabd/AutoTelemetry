@@ -1,18 +1,27 @@
-package org.nighthawklabs.telemetry.obd
+package org.nighthawklabs.telemetry.obd.ev
 
 import android.bluetooth.BluetoothDevice
 import android.util.Log
+import org.nighthawklabs.telemetry.model.EvVehicleData
 import org.nighthawklabs.telemetry.model.VehicleData
+import org.nighthawklabs.telemetry.obd.ObdCommandExecutor
+import org.nighthawklabs.telemetry.obd.ObdConnectionManager
+import org.nighthawklabs.telemetry.obd.ObdDataSource
+import org.nighthawklabs.telemetry.obd.ObdResponseParser
 
-private const val TAG = "RealObdDataSource"
+private const val TAG = "EvObdDataSource"
 
-class RealObdDataSource(
+/**
+ * Implementation of ObdDataSource for Electric Vehicles (EV).
+ */
+class EvObdDataSource(
     private val device: BluetoothDevice,
     private val connectionManager: ObdConnectionManager,
     private val commandExecutor: ObdCommandExecutor,
     private val responseParser: ObdResponseParser
 ) : ObdDataSource {
 
+    private val evParser = EvObdParser(responseParser)
     private var vehicleId: String? = null
 
     override suspend fun connect(): Boolean {
@@ -20,7 +29,6 @@ class RealObdDataSource(
         if (!ok) return false
         return try {
             commandExecutor.initializeObd()
-            // Attempt to get VIN as vehicleId
             vehicleId = try {
                 val vinRaw = commandExecutor.sendCommand("0902")
                 responseParser.parseVin(vinRaw)
@@ -41,18 +49,19 @@ class RealObdDataSource(
     }
 
     override suspend fun readVehicleData(): VehicleData {
-        val rpmRaw = commandExecutor.sendCommand("010C")
+        // Example PIDs for EV
         val speedRaw = commandExecutor.sendCommand("010D")
-        val tempRaw = commandExecutor.sendCommand("0105")
+        val socRaw = commandExecutor.sendCommand("015B")
+        val batteryTempRaw = commandExecutor.sendCommand("015A")
 
-        val rpm = responseParser.parseRpm(rpmRaw)
         val speed = responseParser.parseSpeed(speedRaw)
-        val coolantTemp = responseParser.parseCoolantTemp(tempRaw)
+        val soc = evParser.parseSoc(socRaw)
+        val batteryTemp = evParser.parseBatteryTemp(batteryTempRaw)
 
-        return VehicleData(
-            rpm = rpm,
+        return EvVehicleData(
             speed = speed,
-            coolantTemp = coolantTemp,
+            soc = soc,
+            batteryTemp = batteryTemp,
             timestamp = System.currentTimeMillis(),
             vehicleId = vehicleId
         )

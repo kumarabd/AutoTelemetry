@@ -7,7 +7,6 @@ import androidx.activity.viewModels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import androidx.room.Room
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.Description
 import com.github.mikephil.charting.data.Entry
@@ -15,8 +14,8 @@ import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import org.nighthawklabs.telemetry.ObdTelemetryApplication
 import org.nighthawklabs.telemetry.R
-import org.nighthawklabs.telemetry.data.local.AppDatabase
 import org.nighthawklabs.telemetry.data.repository.DrivingTripRepository
 import org.nighthawklabs.telemetry.data.repository.TelemetryRepository
 import org.nighthawklabs.telemetry.viewmodel.TripDetailViewModel
@@ -32,13 +31,8 @@ class TripDetailActivity : ComponentActivity() {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                val db = Room.databaseBuilder(
-                    applicationContext,
-                    AppDatabase::class.java,
-                    "telemetry.db"
-                )
-                    .addMigrations(AppDatabase.MIGRATION_1_2)
-                    .build()
+                val app = application as ObdTelemetryApplication
+                val db = app.database
                 val tripRepo = DrivingTripRepository(db.drivingTripDao())
                 val telemetryRepo = TelemetryRepository(db.telemetryDao())
                 return TripDetailViewModel(
@@ -148,4 +142,3 @@ class TripDetailActivity : ComponentActivity() {
         viewModel.load()
     }
 }
-

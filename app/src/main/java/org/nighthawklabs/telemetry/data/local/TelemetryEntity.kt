@@ -19,6 +19,8 @@ data class TelemetryEntity(
     val rpm: Int?,
     val speed: Int?,
     val coolantTemp: Int?,
+    val soc: Int? = null,
+    val batteryTemp: Int? = null,
     val latitude: Double?,
     val longitude: Double?,
     val ignitionOn: Boolean?,
@@ -36,6 +38,8 @@ data class TelemetryEntity(
             rpm = rpm,
             speed = speed,
             coolantTemp = coolantTemp,
+            soc = soc,
+            batteryTemp = batteryTemp,
             latitude = latitude,
             longitude = longitude,
             ignitionOn = ignitionOn,
@@ -55,6 +59,8 @@ data class TelemetryEntity(
                 rpm = record.rpm,
                 speed = record.speed,
                 coolantTemp = record.coolantTemp,
+                soc = record.soc,
+                batteryTemp = record.batteryTemp,
                 latitude = record.latitude,
                 longitude = record.longitude,
                 ignitionOn = record.ignitionOn,
@@ -67,4 +73,3 @@ data class TelemetryEntity(
             )
     }
 }
-

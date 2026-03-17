@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.compose.compiler)
     id("com.google.gms.google-services")
 }
 
@@ -35,6 +36,9 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+    buildFeatures {
+        compose = true
+    }
 }
 
 dependencies {
@@ -43,6 +47,17 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
+
+    // Jetpack Compose
+    val composeBom = platform(libs.androidx.compose.bom)
+    implementation(composeBom)
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.ui.icons.extended)
 
     // Room
     implementation(libs.androidx.room.runtime)
@@ -59,10 +74,11 @@ dependencies {
     implementation(libs.firebase.auth.ktx)
     implementation("com.google.firebase:firebase-analytics")
 
-    // Charts for trip detail speed graph
+    // Charts
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    debugImplementation(libs.androidx.ui.tooling)
 }

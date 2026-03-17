@@ -1,21 +1,25 @@
 package org.nighthawklabs.telemetry.viewmodel
 
 import android.bluetooth.BluetoothDevice
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.SharingStarted
 import org.nighthawklabs.telemetry.data.repository.ITelemetryRepository
 import org.nighthawklabs.telemetry.domain.TelemetryRecord
+import org.nighthawklabs.telemetry.domain.ConnectionState
+import org.nighthawklabs.telemetry.domain.SyncState
 import org.nighthawklabs.telemetry.obd.ObdCommandExecutor
 import org.nighthawklabs.telemetry.obd.ObdConnectionManager
-import org.nighthawklabs.telemetry.obd.RealObdDataSource
+import org.nighthawklabs.telemetry.obd.ObdDataSourceFactory
 import org.nighthawklabs.telemetry.obd.ObdResponseParser
 import org.nighthawklabs.telemetry.obd.SimulatedObdDataSource
+import org.nighthawklabs.telemetry.obd.ev.SimulatedEvDataSource
 import org.nighthawklabs.telemetry.service.ObdPollingService
-import org.nighthawklabs.telemetry.sync.TelemetrySyncScheduler
+import org.nighthawklabs.telemetry.sync.SyncManager
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 class ObdViewModel(
     private val pollingService: ObdPollingService,
@@ -25,50 +29,42 @@ class ObdViewModel(
     private val responseParser: ObdResponseParser
 ) : ViewModel() {
 
-    val connectionState: StateFlow<ConnectionState> =
-        pollingService.connectionState
+    private val dataSourceFactory = ObdDataSourceFactory(
+        connectionManager,
+        commandExecutor,
+        responseParser
+    )
 
-    val latestTelemetry: StateFlow<TelemetryRecord?> =
-        repository.observeLatestTelemetry()
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000),
-                initialValue = null
-            )
+    val connectionState: StateFlow<ConnectionState> = pollingService.connectionState
 
-    val pendingRecordCount: StateFlow<Int> =
-        repository.observePendingCount()
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000),
-                initialValue = 0
-            )
+    val latestTelemetry: StateFlow<TelemetryRecord?> = repository.observeLatestTelemetry()
+        .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
-    private val _syncState = MutableStateFlow(SyncState.IDLE)
-    val syncState: StateFlow<SyncState> = _syncState
+    val pendingRecordCount: StateFlow<Int> = repository.observePendingCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val syncState: StateFlow<SyncState> = SyncManager.syncState
 
     fun connectToDevice(device: BluetoothDevice) {
-        val dataSource = RealObdDataSource(
-            device = device,
-            connectionManager = connectionManager,
-            commandExecutor = commandExecutor,
-            responseParser = responseParser
-        )
+        viewModelScope.launch {
+            val dataSource = dataSourceFactory.createDataSource(device)
+            pollingService.connectAndStart(dataSource)
+        }
+    }
+
+    fun connectWithIceSimulator(includeAggressivePhase: Boolean = false) {
+        val dataSource = SimulatedObdDataSource(includeAggressivePhase)
         pollingService.connectAndStart(dataSource)
     }
 
-    fun connectWithSimulator(includeAggressivePhase: Boolean = false) {
-        val dataSource = SimulatedObdDataSource(includeAggressivePhase = includeAggressivePhase)
+    fun connectWithEvSimulator() {
+        val dataSource = SimulatedEvDataSource()
         pollingService.connectAndStart(dataSource)
     }
 
-    fun disconnect() {
-        pollingService.stop()
-    }
-
-    fun syncNow(appContext: android.content.Context) {
-        _syncState.value = SyncState.SYNCING
-        TelemetrySyncScheduler.enqueueOneTimeSync(appContext)
-        _syncState.value = SyncState.SUCCESS
+    fun syncNow(context: Context) {
+        viewModelScope.launch {
+            SyncManager.triggerSync(context)
+        }
     }
 }

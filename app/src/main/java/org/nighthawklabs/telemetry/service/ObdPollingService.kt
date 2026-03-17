@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.nighthawklabs.telemetry.data.repository.ITelemetryRepository
+import org.nighthawklabs.telemetry.domain.ConnectionState
 import org.nighthawklabs.telemetry.obd.ObdDataSource
-import org.nighthawklabs.telemetry.viewmodel.ConnectionState
 
 private const val TAG = "ObdPollingService"
 

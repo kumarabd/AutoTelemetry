@@ -6,6 +6,8 @@ data class TelemetryRecord(
     val rpm: Int?,
     val speed: Int?,
     val coolantTemp: Int?,
+    val soc: Int? = null,
+    val batteryTemp: Int? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val ignitionOn: Boolean? = null,
@@ -16,4 +18,3 @@ data class TelemetryRecord(
     val createdAt: Long,
     val updatedAt: Long
 )
-

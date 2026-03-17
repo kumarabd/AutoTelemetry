@@ -2,6 +2,7 @@ package org.nighthawklabs.telemetry.obd
 
 import kotlin.math.max
 import kotlin.math.min
+import org.nighthawklabs.telemetry.model.IceVehicleData
 import org.nighthawklabs.telemetry.model.VehicleData
 import kotlin.random.Random
 
@@ -48,7 +49,7 @@ class SimulatedObdDataSource(
         lastCoolantTemp = coolant
         lastSpeed = speed.toDouble()
 
-        return VehicleData(
+        return IceVehicleData(
             rpm = rpm,
             speed = speed.toInt(),
             coolantTemp = coolant.toInt(),

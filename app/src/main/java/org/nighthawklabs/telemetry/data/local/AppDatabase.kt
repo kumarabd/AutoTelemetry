@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [TelemetryEntity::class, DrivingTripEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -49,6 +49,13 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
         }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add EV specific columns to telemetry table
+                database.execSQL("ALTER TABLE telemetry ADD COLUMN soc INTEGER")
+                database.execSQL("ALTER TABLE telemetry ADD COLUMN batteryTemp INTEGER")
+            }
+        }
     }
 }
-

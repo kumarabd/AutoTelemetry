@@ -8,6 +8,8 @@ import org.nighthawklabs.telemetry.data.local.TelemetryEntity
 import org.nighthawklabs.telemetry.domain.SyncStatus
 import org.nighthawklabs.telemetry.domain.TelemetryBatch
 import org.nighthawklabs.telemetry.domain.TelemetryRecord
+import org.nighthawklabs.telemetry.model.EvVehicleData
+import org.nighthawklabs.telemetry.model.IceVehicleData
 import org.nighthawklabs.telemetry.model.VehicleData
 import java.util.UUID
 
@@ -29,22 +31,30 @@ class TelemetryRepository(
 ) : ITelemetryRepository {
 
     private companion object {
-        // If records stay in SYNCING longer than this, treat them as FAILED
         private const val SYNCING_STALE_TIMEOUT_MS: Long = 5 * 60 * 1000 // 5 minutes
     }
 
     override suspend fun saveReading(vehicleData: VehicleData) {
         val now = System.currentTimeMillis()
+        
+        // Map polymorphic VehicleData to unified TelemetryRecord
         val record = TelemetryRecord(
             id = UUID.randomUUID().toString(),
             timestamp = vehicleData.timestamp,
-            rpm = vehicleData.rpm,
             speed = vehicleData.speed,
-            coolantTemp = vehicleData.coolantTemp,
+            vehicleId = vehicleData.vehicleId,
+            
+            // Extract ICE fields if present
+            rpm = (vehicleData as? IceVehicleData)?.rpm,
+            coolantTemp = (vehicleData as? IceVehicleData)?.coolantTemp,
+            
+            // Extract EV fields if present
+            soc = (vehicleData as? EvVehicleData)?.soc,
+            batteryTemp = (vehicleData as? EvVehicleData)?.batteryTemp,
+            
             latitude = null,
             longitude = null,
             ignitionOn = null,
-            vehicleId = vehicleData.vehicleId,
             source = "obd_android_app",
             syncStatus = SyncStatus.PENDING,
             createdAt = now,
@@ -68,7 +78,6 @@ class TelemetryRepository(
     override suspend fun getPendingBatch(limit: Int): TelemetryBatch? {
         return try {
             val now = System.currentTimeMillis()
-            // Recover any records stuck in SYNCING for too long so they can be retried.
             val staleBefore = now - SYNCING_STALE_TIMEOUT_MS
             dao.resetStuckSyncing(now = now, staleBefore = staleBefore)
 

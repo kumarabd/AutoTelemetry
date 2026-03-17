@@ -5,32 +5,29 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.widget.Button
-import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import androidx.room.Room
-import org.nighthawklabs.telemetry.R
-import org.nighthawklabs.telemetry.data.local.AppDatabase
+import org.nighthawklabs.telemetry.ObdTelemetryApplication
 import org.nighthawklabs.telemetry.data.repository.TelemetryRepository
 import org.nighthawklabs.telemetry.obd.ObdCommandExecutor
 import org.nighthawklabs.telemetry.obd.ObdConnectionManager
 import org.nighthawklabs.telemetry.obd.ObdResponseParser
 import org.nighthawklabs.telemetry.service.ObdPollingService
-import org.nighthawklabs.telemetry.viewmodel.ConnectionState
+import org.nighthawklabs.telemetry.ui.theme.TelemetryTheme
 import org.nighthawklabs.telemetry.viewmodel.ObdViewModel
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 private const val TAG = "MainActivity"
 
@@ -43,18 +40,15 @@ class MainActivity : ComponentActivity() {
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
-            // No-op; we re-check permissions when user taps connect
+            // Re-check permissions when user taps connect
         }
 
     private val viewModel: ObdViewModel by viewModels {
         object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                val db = Room.databaseBuilder(
-                    applicationContext,
-                    AppDatabase::class.java,
-                    "telemetry.db"
-                ).addMigrations(AppDatabase.MIGRATION_1_2).build()
+                val app = application as ObdTelemetryApplication
+                val db = app.database
                 val telemetryDao = db.telemetryDao()
                 val repository = TelemetryRepository(telemetryDao)
 
@@ -79,76 +73,29 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        val btnConnect: Button = findViewById(R.id.btnConnect)
-        val txtStatus: TextView = findViewById(R.id.txtConnectionStatus)
-        val txtRpm: TextView = findViewById(R.id.txtRpm)
-        val txtSpeed: TextView = findViewById(R.id.txtSpeed)
-        val txtCoolant: TextView = findViewById(R.id.txtCoolantTemp)
-        val txtPending: TextView = findViewById(R.id.txtPendingCount)
-        val btnSyncNow: Button = findViewById(R.id.btnSyncNow)
-        val txtSyncState: TextView = findViewById(R.id.txtSyncState)
-        val btnTripHistory: Button = findViewById(R.id.btnTripHistory)
-        val btnDryRun: Button = findViewById(R.id.btnDryRun)
-
-        btnConnect.setOnClickListener {
-            if (!ensurePermissions()) return@setOnClickListener
-            showDevicePicker()
-        }
-
-        btnSyncNow.setOnClickListener {
-            viewModel.syncNow(applicationContext)
-        }
-
-        btnTripHistory.setOnClickListener {
-            startActivity(android.content.Intent(this, TripHistoryActivity::class.java))
-        }
-
-        btnDryRun.setOnClickListener {
-            viewModel.connectWithSimulator(includeAggressivePhase = true)
-        }
-
-        lifecycleScope.launch {
-            viewModel.connectionState.collectLatest { state ->
-                when (state) {
-                    is ConnectionState.Disconnected -> {
-                        txtStatus.text = "Status: Disconnected"
+        
+        setContent {
+            TelemetryTheme {
+                DashboardScreen(
+                    viewModel = viewModel,
+                    onConnectClick = {
+                        if (ensurePermissions()) {
+                            showDevicePicker()
+                        }
+                    },
+                    onTripHistoryClick = {
+                        startActivity(Intent(this, TripHistoryActivity::class.java))
+                    },
+                    onSyncClick = {
+                        viewModel.syncNow(applicationContext)
+                    },
+                    onIceDryRunClick = {
+                        viewModel.connectWithIceSimulator(includeAggressivePhase = true)
+                    },
+                    onEvDryRunClick = {
+                        viewModel.connectWithEvSimulator()
                     }
-
-                    is ConnectionState.Connecting -> {
-                        txtStatus.text = "Status: Connecting..."
-                    }
-
-                    is ConnectionState.Connected -> {
-                        txtStatus.text = "Status: Connected"
-                    }
-
-                    is ConnectionState.Error -> {
-                        txtStatus.text = "Status: Error - ${state.message}"
-                    }
-                }
-            }
-        }
-
-        lifecycleScope.launch {
-            viewModel.latestTelemetry.collectLatest { data ->
-                if (data == null) return@collectLatest
-                txtRpm.text = "RPM: ${data.rpm ?: "-"}"
-                txtSpeed.text = "Speed: ${data.speed ?: "-"} km/h"
-                txtCoolant.text = "Coolant Temp: ${data.coolantTemp ?: "-"} °C"
-            }
-        }
-
-        lifecycleScope.launch {
-            viewModel.pendingRecordCount.collectLatest { count ->
-                txtPending.text = "Pending records: $count"
-            }
-        }
-
-        lifecycleScope.launch {
-            viewModel.syncState.collectLatest { state ->
-                txtSyncState.text = "Sync state: ${state.name.lowercase().replaceFirstChar { it.uppercase() }}"
+                )
             }
         }
     }
@@ -208,20 +155,14 @@ class MainActivity : ComponentActivity() {
         val deviceList = bondedDevices.toList()
         val names = deviceList.map { "${it.name ?: "Unknown"} (${it.address})" }.toTypedArray()
 
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("Select OBD2 Device")
             .setItems(names) { dialog, which ->
                 val device = deviceList[which]
-                connectToDevice(device)
+                viewModel.connectToDevice(device)
                 dialog.dismiss()
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
-
-    private fun connectToDevice(device: BluetoothDevice) {
-        Log.d(TAG, "User selected device: ${device.name} - ${device.address}")
-        viewModel.connectToDevice(device)
-    }
 }
-
