@@ -17,6 +17,14 @@ class ObdTelemetryApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // Explicitly initialize Firebase (usually handled by google-services plugin but can fail in some edge cases)
+        try {
+            FirebaseApp.initializeApp(this)
+            Log.i(TAG, "FirebaseApp initialized successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize FirebaseApp", e)
+        }
+
         // Initialize Room Database
         database = Room.databaseBuilder(
             this,
@@ -25,13 +33,6 @@ class ObdTelemetryApplication : Application() {
         )
         .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
         .build()
-
-        // Initialize Firebase
-        try {
-            FirebaseApp.initializeApp(this)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize Firebase", e)
-        }
 
         // Schedule periodic telemetry sync
         TelemetrySyncScheduler.enqueuePeriodicSync(this)

@@ -55,13 +55,15 @@ fun DashboardScreen(
         ) {
             StatusCard(connectionState)
 
+            val vehicleType = (connectionState as? ConnectionState.Connected)?.vehicleType
+
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                // Universal
+                // Speed is universal to both ICE and EV
                 item {
                     TelemetryCard(
                         label = "Speed",
@@ -72,47 +74,49 @@ fun DashboardScreen(
                     )
                 }
 
-                // ICE Specific
-                if (telemetry?.rpm != null || telemetry?.coolantTemp != null) {
-                    item {
-                        TelemetryCard(
-                            label = "RPM",
-                            value = telemetry?.rpm?.toString() ?: "---",
-                            unit = "RPM",
-                            icon = Icons.Default.Speed,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                when (vehicleType) {
+                    ConnectionState.VehicleType.ICE -> {
+                        item {
+                            TelemetryCard(
+                                label = "RPM",
+                                value = telemetry?.rpm?.toString() ?: "---",
+                                unit = "RPM",
+                                icon = Icons.Default.Speed,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        item {
+                            TelemetryCard(
+                                label = "Coolant",
+                                value = telemetry?.coolantTemp?.toString() ?: "---",
+                                unit = "°C",
+                                icon = Icons.Default.DeviceThermostat,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
                     }
-                    item {
-                        TelemetryCard(
-                            label = "Coolant",
-                            value = telemetry?.coolantTemp?.toString() ?: "---",
-                            unit = "°C",
-                            icon = Icons.Default.DeviceThermostat,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
+                    ConnectionState.VehicleType.EV -> {
+                        item {
+                            TelemetryCard(
+                                label = "SoC",
+                                value = telemetry?.soc?.toString() ?: "---",
+                                unit = "%",
+                                icon = Icons.Default.BatteryChargingFull,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        item {
+                            TelemetryCard(
+                                label = "Battery Temp",
+                                value = telemetry?.batteryTemp?.toString() ?: "---",
+                                unit = "°C",
+                                icon = Icons.Default.ElectricCar,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
                     }
-                }
-
-                // EV Specific
-                if (telemetry?.soc != null || telemetry?.batteryTemp != null) {
-                    item {
-                        TelemetryCard(
-                            label = "SoC",
-                            value = telemetry?.soc?.toString() ?: "---",
-                            unit = "%",
-                            icon = Icons.Default.BatteryChargingFull,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    item {
-                        TelemetryCard(
-                            label = "Battery",
-                            value = telemetry?.batteryTemp?.toString() ?: "---",
-                            unit = "°C",
-                            icon = Icons.Default.ElectricCar,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
+                    else -> {
+                        // Display nothing or generic placeholder when disconnected
                     }
                 }
 
@@ -189,7 +193,7 @@ fun StatusCard(state: ConnectionState) {
     val (statusText, color) = when (state) {
         is ConnectionState.Disconnected -> "Disconnected" to Color.Gray
         is ConnectionState.Connecting -> "Connecting..." to MaterialTheme.colorScheme.primary
-        is ConnectionState.Connected -> "Connected" to MaterialTheme.colorScheme.secondary
+        is ConnectionState.Connected -> "Connected (${state.vehicleType})" to MaterialTheme.colorScheme.secondary
         is ConnectionState.Error -> "Error" to MaterialTheme.colorScheme.error
     }
 
@@ -212,7 +216,21 @@ fun StatusCard(state: ConnectionState) {
             Spacer(Modifier.width(12.dp))
             Column {
                 Text("System Status", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                Text(statusText, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(statusText, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                    if (state is ConnectionState.Connected) {
+                        val icon = when (state.vehicleType) {
+                            ConnectionState.VehicleType.ICE -> Icons.Default.DirectionsCar
+                            ConnectionState.VehicleType.EV -> Icons.Default.ElectricCar
+                            ConnectionState.VehicleType.HYBRID -> Icons.Default.ElectricCar
+                            else -> null
+                        }
+                        if (icon != null) {
+                            Spacer(Modifier.width(8.dp))
+                            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
             }
             if (state is ConnectionState.Error) {
                 Spacer(Modifier.weight(1f))

@@ -2,6 +2,7 @@ package org.nighthawklabs.telemetry.obd.ev
 
 import android.bluetooth.BluetoothDevice
 import android.util.Log
+import org.nighthawklabs.telemetry.domain.ConnectionState
 import org.nighthawklabs.telemetry.model.EvVehicleData
 import org.nighthawklabs.telemetry.model.VehicleData
 import org.nighthawklabs.telemetry.obd.ObdCommandExecutor
@@ -20,6 +21,8 @@ class EvObdDataSource(
     private val commandExecutor: ObdCommandExecutor,
     private val responseParser: ObdResponseParser
 ) : ObdDataSource {
+
+    override val vehicleType: ConnectionState.VehicleType = ConnectionState.VehicleType.EV
 
     private val evParser = EvObdParser(responseParser)
     private var vehicleId: String? = null

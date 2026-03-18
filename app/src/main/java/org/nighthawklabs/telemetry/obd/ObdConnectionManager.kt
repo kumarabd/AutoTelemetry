@@ -34,20 +34,29 @@ class ObdConnectionManager(context: Context) {
         }
 
         try {
+            Log.d(TAG, "Creating RFCOMM socket for device: ${device.name} (${device.address})")
             val tmpSocket = device.createRfcommSocketToServiceRecord(sppUuid)
-            bluetoothAdapter.cancelDiscovery()
+            
+            if (bluetoothAdapter.isDiscovering) {
+                Log.d(TAG, "Cancelling ongoing Bluetooth discovery...")
+                bluetoothAdapter.cancelDiscovery()
+            }
 
-            Log.d(TAG, "Connecting to device: ${device.name} - ${device.address}")
+            Log.d(TAG, "Attempting to connect socket...")
             tmpSocket.connect()
 
             socket = tmpSocket
             inputStream = tmpSocket.inputStream
             outputStream = tmpSocket.outputStream
 
-            Log.d(TAG, "Bluetooth connected")
+            Log.i(TAG, "Bluetooth connected successfully to ${device.name}")
             true
         } catch (e: IOException) {
-            Log.e(TAG, "Error connecting to device", e)
+            Log.e(TAG, "Failed to connect to device ${device.name} (${device.address}): ${e.message}", e)
+            disconnect()
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected error during connection: ${e.message}", e)
             disconnect()
             false
         }
@@ -58,33 +67,39 @@ class ObdConnectionManager(context: Context) {
     fun getOutputStream(): OutputStream? = outputStream
 
     fun isConnected(): Boolean {
-        return socket?.isConnected == true
+        val connected = socket?.isConnected == true
+        Log.v(TAG, "Checking connection state: $connected")
+        return connected
     }
 
     fun disconnect() {
+        Log.d(TAG, "Disconnecting and cleaning up resources...")
         try {
             inputStream?.close()
+            Log.v(TAG, "Input stream closed")
         } catch (e: IOException) {
-            Log.w(TAG, "Error closing input stream", e)
+            Log.w(TAG, "Error closing input stream: ${e.message}")
         } finally {
             inputStream = null
         }
 
         try {
             outputStream?.close()
+            Log.v(TAG, "Output stream closed")
         } catch (e: IOException) {
-            Log.w(TAG, "Error closing output stream", e)
+            Log.w(TAG, "Error closing output stream: ${e.message}")
         } finally {
             outputStream = null
         }
 
         try {
             socket?.close()
+            Log.v(TAG, "Bluetooth socket closed")
         } catch (e: IOException) {
-            Log.w(TAG, "Error closing socket", e)
+            Log.w(TAG, "Error closing socket: ${e.message}")
         } finally {
             socket = null
         }
+        Log.i(TAG, "Disconnected.")
     }
 }
-

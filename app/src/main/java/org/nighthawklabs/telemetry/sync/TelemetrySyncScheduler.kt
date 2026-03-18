@@ -1,65 +1,47 @@
 package org.nighthawklabs.telemetry.sync
 
 import android.content.Context
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
+import android.util.Log
+import androidx.work.*
 import org.nighthawklabs.telemetry.worker.TelemetrySyncWorker
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.guava.await
 
 private const val UNIQUE_PERIODIC_WORK_NAME = "telemetry_periodic_sync"
 private const val UNIQUE_ONE_TIME_WORK_NAME = "telemetry_one_time_sync"
+private const val TAG = "TelemetrySyncScheduler"
 
 object TelemetrySyncScheduler {
 
-    private fun defaultConstraints(): Constraints =
-        Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresBatteryNotLow(true)
-            .build()
-
-    fun enqueueOneTimeSync(context: Context, scope: CoroutineScope = CoroutineScope(Dispatchers.Default)) {
+    fun enqueueOneTimeSync(context: Context) {
+        Log.i(TAG, "Enqueuing OneTimeSync. (Constraints: NONE for manual trigger)")
+        
         val workManager = WorkManager.getInstance(context)
         
-        scope.launch {
-            try {
-                val existing = workManager.getWorkInfosForUniqueWork(UNIQUE_ONE_TIME_WORK_NAME).await()
-                val hasRunning = existing.any {
-                    it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
-                }
-                if (hasRunning) {
-                    return@launch
-                }
+        // Removing network constraints for the manual trigger to ensure it starts 
+        // and we can see logs even if the system thinks there's no internet.
+        val workRequest = OneTimeWorkRequestBuilder<TelemetrySyncWorker>()
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
+            .build()
 
-                val workRequest = OneTimeWorkRequestBuilder<TelemetrySyncWorker>()
-                    .setConstraints(defaultConstraints())
-                    .build()
-
-                workManager.enqueueUniqueWork(
-                    UNIQUE_ONE_TIME_WORK_NAME,
-                    ExistingWorkPolicy.KEEP,
-                    workRequest
-                )
-            } catch (e: Exception) {
-                // Log or handle error
-            }
-        }
+        workManager.enqueueUniqueWork(
+            UNIQUE_ONE_TIME_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            workRequest
+        )
+        Log.d(TAG, "OneTimeSync work request enqueued with REPLACE policy.")
     }
 
     fun enqueuePeriodicSync(context: Context) {
+        Log.i(TAG, "Enqueuing PeriodicSync (15min interval)")
+        
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
         val workRequest = PeriodicWorkRequestBuilder<TelemetrySyncWorker>(
             15, TimeUnit.MINUTES
         )
-            .setConstraints(defaultConstraints())
+            .setConstraints(constraints)
             .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(

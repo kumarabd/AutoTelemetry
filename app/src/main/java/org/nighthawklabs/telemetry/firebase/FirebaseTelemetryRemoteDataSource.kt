@@ -15,14 +15,23 @@ class FirebaseTelemetryRemoteDataSource(
 ) {
 
     suspend fun uploadBatch(batch: TelemetryBatch): Boolean {
-        val user = sessionManager.ensureSignedIn()
+        Log.i(TAG, "Starting batch upload for ${batch.records.size} records...")
+        
+        val user = try {
+            sessionManager.ensureSignedIn()
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception during authentication process: ${e.message}", e)
+            null
+        }
+        
         if (user == null) {
-            Log.e(TAG, "Cannot upload batch: no authenticated user")
+            Log.e(TAG, "Cannot upload batch: authentication failed. Check if Anonymous Auth is enabled in Firebase Console.")
             return false
         }
 
         val uploaderUserId = user.uid
         val uploadedAt = System.currentTimeMillis()
+        Log.d(TAG, "Authenticated as: $uploaderUserId. Preparing Firestore batch...")
 
         val writeBatch: WriteBatch = firestore.batch()
 
@@ -31,7 +40,7 @@ class FirebaseTelemetryRemoteDataSource(
             val docRef = firestore
                 .collection("telemetry_vehicles")
                 .document(vehicleId)
-                .collection("records")
+                .collection("obd")
                 .document(record.id)
 
             val data = mapRecordToDocument(record, uploadedAt, uploaderUserId)
@@ -39,10 +48,12 @@ class FirebaseTelemetryRemoteDataSource(
         }
 
         return try {
+            Log.d(TAG, "Committing ${batch.records.size} operations in Firestore batch...")
             writeBatch.commit().await()
+            Log.i(TAG, "Successfully committed batch to Firestore.")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to upload batch ${batch.batchId}", e)
+            Log.e(TAG, "Firestore commit failed for batch ${batch.batchId}: ${e.message}", e)
             false
         }
     }
@@ -58,12 +69,14 @@ class FirebaseTelemetryRemoteDataSource(
             "rpm" to record.rpm,
             "speed" to record.speed,
             "coolantTemp" to record.coolantTemp,
+            "soc" to record.soc,
+            "batteryTemp" to record.batteryTemp,
             "latitude" to record.latitude,
             "longitude" to record.longitude,
             "ignitionOn" to record.ignitionOn,
             "vehicleId" to (record.vehicleId ?: "unknown_vehicle"),
             "source" to record.source,
-            "syncStatus" to record.syncStatus.name,
+            "syncStatus" to "SYNCED",
             "createdAt" to record.createdAt,
             "updatedAt" to record.updatedAt,
             "uploadedAt" to uploadedAt,
@@ -71,4 +84,3 @@ class FirebaseTelemetryRemoteDataSource(
         )
     }
 }
-

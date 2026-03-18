@@ -4,6 +4,7 @@ import kotlin.math.max
 import kotlin.math.min
 import org.nighthawklabs.telemetry.model.IceVehicleData
 import org.nighthawklabs.telemetry.model.VehicleData
+import org.nighthawklabs.telemetry.domain.ConnectionState
 import kotlin.random.Random
 
 /**
@@ -13,6 +14,8 @@ import kotlin.random.Random
 class SimulatedObdDataSource(
     private val includeAggressivePhase: Boolean = false
 ) : ObdDataSource {
+
+    override val vehicleType: ConnectionState.VehicleType = ConnectionState.VehicleType.ICE
 
     private var sessionStartMs: Long = 0L
     private var lastCoolantTemp: Double = 65.0

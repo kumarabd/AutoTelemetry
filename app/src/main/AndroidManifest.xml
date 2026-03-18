@@ -1,13 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="org.nighthawklabs.telemetry">
 
-    <!-- Bluetooth permissions -->
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <queries>
+        <!-- Package visibility for Google Play Services and Store Framework -->
+        <package android:name="com.google.android.gms" />
+        <package android:name="com.google.android.gsf" />
+        <package android:name="com.android.vending" />
+
+        <!-- Necessary for some Google Auth/Sign-in variants -->
+        <intent>
+            <action android:name="com.google.android.gms.auth.api.signin.Service.START" />
+        </intent>
+        <intent>
+            <action android:name="com.google.android.gms.common.api.BIND_GMS_SERVICE" />
+        </intent>
+    </queries>
 
     <application
         android:name=".ObdTelemetryApplication"
@@ -19,6 +37,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Telemetry">
+
+        <meta-data
+            android:name="com.google.android.gms.version"
+            android:value="@integer/google_play_services_version" />
 
         <activity
             android:name=".ui.TripDetailActivity"

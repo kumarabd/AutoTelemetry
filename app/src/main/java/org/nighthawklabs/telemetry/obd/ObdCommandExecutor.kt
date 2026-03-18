@@ -34,14 +34,19 @@ class ObdCommandExecutor(
             "ATSP0"  // auto protocol
         )
 
+        Log.i(TAG, "Starting OBD initialization sequence...")
         for (cmd in initCommands) {
             val response = sendCommand(cmd)
+            Log.d(TAG, "Command: $cmd -> Response: $response")
+            
             if (!response.contains("OK", ignoreCase = true) &&
-                !response.contains("SEARCHING", ignoreCase = true)
+                !response.contains("SEARCHING", ignoreCase = true) &&
+                !response.contains("ELM327", ignoreCase = true) // ATZ response
             ) {
-                Log.w(TAG, "Unexpected init response for $cmd: $response")
+                Log.w(TAG, "Unexpected response for $cmd: $response")
             }
         }
+        Log.i(TAG, "OBD initialization sequence finished.")
 
         return true
     }
@@ -52,24 +57,32 @@ class ObdCommandExecutor(
             val input = inputStream
 
             if (out == null || input == null) {
-                Log.e(TAG, "Cannot send command, streams are null")
+                Log.e(TAG, "Cannot send command '$command', streams are null (disconnected?)")
                 return@withContext ""
             }
 
             try {
                 // Clear any existing data
-                while (input.available() > 0) {
-                    input.read()
+                val clearedBytes = if (input.available() > 0) {
+                    val count = input.available()
+                    input.skip(count.toLong())
+                    count
+                } else 0
+                
+                if (clearedBytes > 0) {
+                    Log.v(TAG, "Cleared $clearedBytes bytes from input buffer before sending '$command'")
                 }
 
                 val cmdWithNewline = "$command\r"
-                Log.d(TAG, "Sending OBD command: $command")
+                Log.v(TAG, ">>> Sending command: '$command'")
                 out.write(cmdWithNewline.toByteArray(charset))
                 out.flush()
 
-                readResponse(input, timeoutMs)
+                val response = readResponse(input, timeoutMs)
+                Log.v(TAG, "<<< Received response for '$command': '$response'")
+                response
             } catch (e: IOException) {
-                Log.e(TAG, "Error sending command $command", e)
+                Log.e(TAG, "IOException while sending command '$command': ${e.message}", e)
                 ""
             }
         }
@@ -82,26 +95,31 @@ class ObdCommandExecutor(
         try {
             while (true) {
                 if (System.currentTimeMillis() - startTime > timeoutMs) {
-                    Log.w(TAG, "Timeout waiting for OBD response")
+                    Log.w(TAG, "Timeout ($timeoutMs ms) waiting for OBD response. Partial data: '${sb.toString().trim()}'")
                     break
                 }
 
-                if (reader.ready()) {
-                    val line = reader.readLine() ?: break
-                    if (line.contains(">")) {
-                        sb.append(line.replace(">", ""))
+                // Bluetooth sockets can be slow, we check availability or ready state
+                if (reader.ready() || input.available() > 0) {
+                    val char = reader.read()
+                    if (char == -1) break
+                    val c = char.toChar()
+                    
+                    if (c == '>') {
+                        Log.v(TAG, "Prompt character '>' received.")
                         break
                     }
-                    sb.append(line).append(' ')
+                    sb.append(c)
+                } else {
+                    // Small sleep to avoid tight loop while waiting for characters
+                    Thread.sleep(10)
                 }
             }
-        } catch (e: IOException) {
-            Log.e(TAG, "Error reading OBD response", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading OBD response: ${e.message}", e)
         }
 
         val raw = sb.toString().trim()
-        Log.d(TAG, "Raw OBD response: $raw")
         return raw
     }
 }
-

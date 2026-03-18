@@ -1,5 +1,6 @@
 package org.nighthawklabs.telemetry.obd.ev
 
+import org.nighthawklabs.telemetry.domain.ConnectionState
 import org.nighthawklabs.telemetry.model.EvVehicleData
 import org.nighthawklabs.telemetry.model.VehicleData
 import org.nighthawklabs.telemetry.obd.ObdDataSource
@@ -7,6 +8,8 @@ import kotlin.math.max
 import kotlin.random.Random
 
 class SimulatedEvDataSource : ObdDataSource {
+
+    override val vehicleType: ConnectionState.VehicleType = ConnectionState.VehicleType.EV
 
     private var sessionStartMs: Long = 0L
     private var lastSoc: Double = 80.0

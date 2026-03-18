@@ -52,10 +52,11 @@ class MainActivity : ComponentActivity() {
                 val telemetryDao = db.telemetryDao()
                 val repository = TelemetryRepository(telemetryDao)
 
-                val connectionManager = ObdConnectionManager(this@MainActivity)
+                val connectionManager = ObdConnectionManager(applicationContext)
                 val executor = ObdCommandExecutor(connectionManager)
                 val parser = ObdResponseParser()
                 val pollingService = ObdPollingService(
+                    context = applicationContext,
                     repository = repository,
                     externalScope = lifecycleScope
                 )

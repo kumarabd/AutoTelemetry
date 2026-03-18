@@ -50,7 +50,7 @@ interface TelemetryDao {
     @Query("DELETE FROM telemetry WHERE syncStatus = 'SYNCED' AND timestamp < :timestamp")
     suspend fun deleteSyncedOlderThan(timestamp: Long)
 
-    @Query("SELECT COUNT(*) FROM telemetry WHERE syncStatus IN ('PENDING', 'FAILED')")
+    @Query("SELECT COUNT(*) FROM telemetry WHERE syncStatus != 'SYNCED'")
     fun observePendingCount(): Flow<Int>
 
     @Query(
@@ -60,9 +60,8 @@ interface TelemetryDao {
         WHERE syncStatus = 'SYNCING' AND updatedAt < :staleBefore
         """
     )
-    suspend fun resetStuckSyncing(now: Long, staleBefore: Long)
+    suspend fun resetStuckSyncing(now: Long, staleBefore: Long): Int
 
     @Query("SELECT * FROM telemetry WHERE tripId = :tripId ORDER BY timestamp ASC")
     suspend fun getTelemetryForTrip(tripId: String): List<TelemetryEntity>
 }
-

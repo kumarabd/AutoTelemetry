@@ -2,6 +2,7 @@ package org.nighthawklabs.telemetry.obd.ice
 
 import android.bluetooth.BluetoothDevice
 import android.util.Log
+import org.nighthawklabs.telemetry.domain.ConnectionState
 import org.nighthawklabs.telemetry.model.IceVehicleData
 import org.nighthawklabs.telemetry.model.VehicleData
 import org.nighthawklabs.telemetry.obd.ObdCommandExecutor
@@ -20,6 +21,8 @@ class IceObdDataSource(
     private val commandExecutor: ObdCommandExecutor,
     private val baseParser: ObdResponseParser
 ) : ObdDataSource {
+
+    override val vehicleType: ConnectionState.VehicleType = ConnectionState.VehicleType.ICE
 
     private val iceParser = IceObdParser(baseParser)
     private var vehicleId: String? = null
