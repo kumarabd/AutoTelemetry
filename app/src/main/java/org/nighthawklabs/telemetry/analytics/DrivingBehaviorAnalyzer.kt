@@ -17,9 +17,8 @@ class DrivingBehaviorAnalyzer {
         var windowStartIndex = 0
         for (i in 1 until sorted.size) {
             val current = sorted[i]
-            val windowStart = sorted[windowStartIndex]
-
-            while (current.timestamp - windowStart.timestamp > 3_000L && windowStartIndex < i) {
+            
+            while (windowStartIndex < i && current.timestamp - sorted[windowStartIndex].timestamp > 3_000L) {
                 windowStartIndex++
             }
             val base = sorted[windowStartIndex]
@@ -49,27 +48,32 @@ class DrivingBehaviorAnalyzer {
             }
         }
 
-        // High RPM events (> 4000 for > 5s)
-        var highRpmStart: TelemetryRecord? = null
+        // High RPM events (> 4000 for > 5s) - Specific to ICE
+        var highRpmStart: TelemetryRecord.Ice? = null
         for (i in sorted.indices) {
             val rec = sorted[i]
-            val rpm = rec.rpm ?: 0
-            if (rpm > 4000) {
-                if (highRpmStart == null) {
-                    highRpmStart = rec
+            if (rec is TelemetryRecord.Ice) {
+                val rpm = rec.rpm ?: 0
+                if (rpm > 4000) {
+                    if (highRpmStart == null) {
+                        highRpmStart = rec
+                    }
+                } else if (highRpmStart != null) {
+                    val duration = rec.timestamp - highRpmStart.timestamp
+                    if (duration >= 5_000L) {
+                        events += DrivingEvent(
+                            eventId = UUID.randomUUID().toString(),
+                            tripId = tripId,
+                            type = DrivingEventType.HIGH_RPM,
+                            timestamp = rec.timestamp,
+                            severity = DrivingEventSeverity.MEDIUM,
+                            value = rpm.toDouble()
+                        )
+                    }
+                    highRpmStart = null
                 }
-            } else if (highRpmStart != null) {
-                val duration = rec.timestamp - highRpmStart.timestamp
-                if (duration >= 5_000L) {
-                    events += DrivingEvent(
-                        eventId = UUID.randomUUID().toString(),
-                        tripId = tripId,
-                        type = DrivingEventType.HIGH_RPM,
-                        timestamp = rec.timestamp,
-                        severity = DrivingEventSeverity.MEDIUM,
-                        value = rpm.toDouble()
-                    )
-                }
+            } else {
+                // If we hit an EV record, reset high RPM tracking for this stream
                 highRpmStart = null
             }
         }
@@ -77,4 +81,3 @@ class DrivingBehaviorAnalyzer {
         return events
     }
 }
-

@@ -4,6 +4,7 @@ import kotlin.math.max
 import kotlin.math.min
 import org.nighthawklabs.telemetry.model.IceVehicleData
 import org.nighthawklabs.telemetry.model.VehicleData
+import org.nighthawklabs.telemetry.model.VehicleMetadata
 import org.nighthawklabs.telemetry.domain.ConnectionState
 import kotlin.random.Random
 
@@ -16,11 +17,12 @@ class SimulatedObdDataSource(
 ) : ObdDataSource {
 
     override val vehicleType: ConnectionState.VehicleType = ConnectionState.VehicleType.ICE
+    
+    override val vehicleId: String = "SIMULATED_ICE_V8_001"
 
     private var sessionStartMs: Long = 0L
     private var lastCoolantTemp: Double = 65.0
     private var lastSpeed: Double = 0.0
-    private val simulatedVehicleId = "SIMULATED_VEHICLE_001"
 
     // Phase durations in ms (with slight randomness)
     private val phase1DurationMs: Long = (20 + Random.nextInt(11)) * 1000L
@@ -57,7 +59,18 @@ class SimulatedObdDataSource(
             speed = speed.toInt(),
             coolantTemp = coolant.toInt(),
             timestamp = System.currentTimeMillis(),
-            vehicleId = simulatedVehicleId
+            vehicleId = vehicleId
+        )
+    }
+
+    override suspend fun getMetadata(): VehicleMetadata {
+        return VehicleMetadata(
+            vin = "SIMICEV8TRUCK2024",
+            make = "Simulated",
+            model = "F-150 V8 (Sim)",
+            year = 2024,
+            fuelType = "Gasoline",
+            isEv = false
         )
     }
 

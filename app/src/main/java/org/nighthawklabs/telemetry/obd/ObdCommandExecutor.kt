@@ -1,14 +1,25 @@
 package org.nighthawklabs.telemetry.obd
 
 import android.util.Log
+import com.github.eltonvs.obd.connection.ObdDeviceConnection
+import com.github.eltonvs.obd.command.AdaptiveTimingMode
+import com.github.eltonvs.obd.command.ObdCommand
+import com.github.eltonvs.obd.command.ObdProtocols
+import com.github.eltonvs.obd.command.NoDataException
+import com.github.eltonvs.obd.command.ObdResponse
+import com.github.eltonvs.obd.command.Switcher
+import com.github.eltonvs.obd.command.at.ResetAdapterCommand
+import com.github.eltonvs.obd.command.at.SelectProtocolCommand
+import com.github.eltonvs.obd.command.at.SetAdaptiveTimingCommand
+import com.github.eltonvs.obd.command.at.SetEchoCommand
+import com.github.eltonvs.obd.command.at.SetHeadersCommand
+import com.github.eltonvs.obd.command.at.SetLineFeedCommand
+import com.github.eltonvs.obd.command.at.SetSpacesCommand
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.IOException
 import java.io.InputStream
-import java.io.InputStreamReader
 import java.io.OutputStream
-import java.nio.charset.Charset
 
 private const val TAG = "ObdCommandExecutor"
 
@@ -16,7 +27,9 @@ class ObdCommandExecutor(
     private val connectionManager: ObdConnectionManager
 ) {
 
-    private val charset: Charset = Charsets.US_ASCII
+    private var obdConnection: ObdDeviceConnection? = null
+    private var cachedInputStream: InputStream? = null
+    private var cachedOutputStream: OutputStream? = null
 
     private val inputStream: InputStream?
         get() = connectionManager.getInputStream()
@@ -24,102 +37,94 @@ class ObdCommandExecutor(
     private val outputStream: OutputStream?
         get() = connectionManager.getOutputStream()
 
-    suspend fun initializeObd(): Boolean {
-        val initCommands = listOf(
-            "ATZ",   // reset
-            "ATE0",  // echo off
-            "ATL0",  // linefeeds off
-            "ATS0",  // spaces off
-            "ATH0",  // headers off
-            "ATSP0"  // auto protocol
-        )
-
-        Log.i(TAG, "Starting OBD initialization sequence...")
-        for (cmd in initCommands) {
-            val response = sendCommand(cmd)
-            Log.d(TAG, "Command: $cmd -> Response: $response")
-            
-            if (!response.contains("OK", ignoreCase = true) &&
-                !response.contains("SEARCHING", ignoreCase = true) &&
-                !response.contains("ELM327", ignoreCase = true) // ATZ response
-            ) {
-                Log.w(TAG, "Unexpected response for $cmd: $response")
-            }
+    private fun getOrBuildConnection(): ObdDeviceConnection? {
+        val input = inputStream
+        val output = outputStream
+        if (input == null || output == null) {
+            obdConnection = null
+            cachedInputStream = null
+            cachedOutputStream = null
+            return null
         }
-        Log.i(TAG, "OBD initialization sequence finished.")
-
-        return true
+        // Rebuild connection if streams changed (e.g. after disconnect/reconnect)
+        if (obdConnection == null || cachedInputStream != input || cachedOutputStream != output) {
+            obdConnection = ObdDeviceConnection(input, output)
+            cachedInputStream = input
+            cachedOutputStream = output
+        }
+        return obdConnection
     }
 
-    suspend fun sendCommand(command: String, timeoutMs: Long = 2000L): String =
-        withContext(Dispatchers.IO) {
-            val out = outputStream
-            val input = inputStream
+    suspend fun initializeObd(): Boolean = withContext(Dispatchers.IO) {
+        val connection = getOrBuildConnection() ?: return@withContext false
 
-            if (out == null || input == null) {
-                Log.e(TAG, "Cannot send command '$command', streams are null (disconnected?)")
-                return@withContext ""
-            }
-
-            try {
-                // Clear any existing data
-                val clearedBytes = if (input.available() > 0) {
-                    val count = input.available()
-                    input.skip(count.toLong())
-                    count
-                } else 0
-                
-                if (clearedBytes > 0) {
-                    Log.v(TAG, "Cleared $clearedBytes bytes from input buffer before sending '$command'")
-                }
-
-                val cmdWithNewline = "$command\r"
-                Log.v(TAG, ">>> Sending command: '$command'")
-                out.write(cmdWithNewline.toByteArray(charset))
-                out.flush()
-
-                val response = readResponse(input, timeoutMs)
-                Log.v(TAG, "<<< Received response for '$command': '$response'")
-                response
-            } catch (e: IOException) {
-                Log.e(TAG, "IOException while sending command '$command': ${e.message}", e)
-                ""
-            }
-        }
-
-    private fun readResponse(input: InputStream, timeoutMs: Long): String {
-        val reader = BufferedReader(InputStreamReader(input, charset))
-        val startTime = System.currentTimeMillis()
-        val sb = StringBuilder()
-
+        Log.i(TAG, "Starting OBD initialization via kotlin-obd-api...")
         try {
-            while (true) {
-                if (System.currentTimeMillis() - startTime > timeoutMs) {
-                    Log.w(TAG, "Timeout ($timeoutMs ms) waiting for OBD response. Partial data: '${sb.toString().trim()}'")
-                    break
-                }
-
-                // Bluetooth sockets can be slow, we check availability or ready state
-                if (reader.ready() || input.available() > 0) {
-                    val char = reader.read()
-                    if (char == -1) break
-                    val c = char.toChar()
-                    
-                    if (c == '>') {
-                        Log.v(TAG, "Prompt character '>' received.")
-                        break
-                    }
-                    sb.append(c)
-                } else {
-                    // Small sleep to avoid tight loop while waiting for characters
-                    Thread.sleep(10)
-                }
+            suspend fun logInit(cmd: ObdCommand) {
+                val resp = connection.run(cmd)
+                // rawResponse.value contains what the adapter returned (e.g. OK / 0: ... / etc.)
+                Log.i(TAG, "Init ${cmd.tag} raw='${resp.rawResponse.value}' parsed='${resp.value}'")
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error reading OBD response: ${e.message}", e)
-        }
 
-        val raw = sb.toString().trim()
-        return raw
+            // Standard initialization sequence
+            logInit(ResetAdapterCommand())
+            delay(500)
+            logInit(SetAdaptiveTimingCommand(AdaptiveTimingMode.AUTO_1))
+            logInit(SetEchoCommand(Switcher.OFF))
+            logInit(SetLineFeedCommand(Switcher.OFF))
+            logInit(SetSpacesCommand(Switcher.OFF))
+            logInit(SetHeadersCommand(Switcher.OFF))
+            logInit(SelectProtocolCommand(ObdProtocols.AUTO))
+            delay(2000)
+            logInit(SelectProtocolCommand(ObdProtocols.ISO_15765_4_CAN))
+            delay(1000)
+
+            Log.i(TAG, "OBD initialization sequence finished.")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize OBD: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * Executes a high-level command from the library.
+     */
+    suspend fun executeCommand(command: ObdCommand): Any? = withContext(Dispatchers.IO) {
+        val connection = getOrBuildConnection() ?: return@withContext null
+        try {
+            val response = connection.run(command)
+            Log.i(TAG, "Command ${command.tag} raw='${response.rawResponse.value}' parsed='${response.value}'")
+            response.value
+        } catch (e: Exception) {
+            Log.e(TAG, "Error executing ${command.tag}: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
+     * Fallback for raw commands not in the library.
+     */
+    suspend fun sendRawCommand(rawCommand: String): String = withContext(Dispatchers.IO) {
+        val connection = getOrBuildConnection() ?: return@withContext ""
+        try {
+            val command = object : ObdCommand() {
+                override val tag: String = "Raw_$rawCommand"
+                override val name: String = "Raw $rawCommand"
+                override val mode: String = rawCommand.take(2)
+                override val pid: String = if (rawCommand.length > 2) rawCommand.substring(2) else ""
+                override val skipDigitCheck: Boolean = true
+                override fun format(response: ObdResponse): String = response.value
+            }
+            val response = connection.run(command)
+            Log.i(TAG, "Raw $rawCommand -> '${response.rawResponse.value}'")
+            response.value
+        } catch (e: NoDataException) {
+            Log.v(TAG, "Raw $rawCommand: NO DATA (vehicle may not support this PID)")
+            ""
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending raw command '$rawCommand': ${e.message}", e)
+            ""
+        }
     }
 }
