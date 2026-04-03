@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.nighthawklabs.telemetry.data.repository.ITelemetryRepository
 import org.nighthawklabs.telemetry.domain.ConnectionState
+import org.nighthawklabs.telemetry.location.LocationTracker
 import org.nighthawklabs.telemetry.obd.ObdDataSource
 import org.nighthawklabs.telemetry.sync.SyncManager
 
@@ -23,6 +24,7 @@ private const val FLUSH_INTERVAL_MS = 60_000L // 1 minute
 class ObdPollingService(
     private val context: Context,
     private val repository: ITelemetryRepository,
+    private val locationTracker: LocationTracker,
     private val externalScope: CoroutineScope
 ) {
 
@@ -62,12 +64,22 @@ class ObdPollingService(
                 }
 
                 _connectionState.value = ConnectionState.Connected(dataSource.vehicleType)
+                
+                // Start tracking location when polling starts
+                locationTracker.startTracking()
 
                 while (true) {
                     try {
                         val vehicleData = dataSource.readVehicleData()
-                        // Pass activeTripId if available
-                        repository.saveReadingWithTrip(vehicleData, activeTripId)
+                        val currentLocation = locationTracker.currentLocation.value
+                        
+                        // Pass activeTripId and GPS coordinates if available
+                        repository.saveReadingWithTrip(
+                            vehicleData = vehicleData,
+                            tripId = activeTripId,
+                            latitude = currentLocation?.latitude,
+                            longitude = currentLocation?.longitude
+                        )
                         
                         recordsSinceLastFlush++
                         val now = System.currentTimeMillis()
@@ -89,6 +101,7 @@ class ObdPollingService(
                 }
             } finally {
                 withContext(NonCancellable) {
+                    locationTracker.stopTracking()
                     dataSource.disconnect()
                 }
                 _connectionState.value = ConnectionState.Disconnected

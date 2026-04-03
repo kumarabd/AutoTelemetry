@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,7 +19,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
 import org.nighthawklabs.telemetry.domain.ConnectionState
+import org.nighthawklabs.telemetry.domain.TelemetryRecord
 import org.nighthawklabs.telemetry.viewmodel.ObdViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,11 +32,47 @@ fun DashboardScreen(
     onTripHistoryClick: () -> Unit,
     onSyncClick: () -> Unit,
     onIceDryRunClick: () -> Unit,
-    onEvDryRunClick: () -> Unit
+    onEvDryRunClick: () -> Unit,
+    onLoginClick: () -> Unit,
+    onLogoutClick: () -> Unit
 ) {
     val connectionState by viewModel.connectionState.collectAsState()
     val telemetry by viewModel.latestTelemetry.collectAsState()
     val pendingCount by viewModel.pendingRecordCount.collectAsState()
+    
+    val snackbarHostState = remember { SnackbarHostState() }
+    
+    // Minimal reactive state for auth
+    var currentUser by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser) }
+    
+    // Auth state listener
+    DisposableEffect(Unit) {
+        val listener = FirebaseAuth.AuthStateListener { auth ->
+            currentUser = auth.currentUser
+        }
+        FirebaseAuth.getInstance().addAuthStateListener(listener)
+        onDispose {
+            FirebaseAuth.getInstance().removeAuthStateListener(listener)
+        }
+    }
+
+    // UI Events listener (Toasts/Snackbars)
+    LaunchedEffect(Unit) {
+        viewModel.uiEvents.collect { event ->
+            when (event) {
+                is ObdViewModel.UiEvent.Message -> {
+                    snackbarHostState.showSnackbar(event.text)
+                }
+                is ObdViewModel.UiEvent.Error -> {
+                    snackbarHostState.showSnackbar(
+                        message = event.text,
+                        duration = SnackbarDuration.Long,
+                        withDismissAction = true
+                    )
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -41,9 +81,30 @@ fun DashboardScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
-                )
+                ),
+                actions = {
+                    val user = currentUser
+                    // Show Google Login if not logged in OR if only logged in anonymously
+                    if (user == null || user.isAnonymous) {
+                        TextButton(onClick = onLoginClick) {
+                            Icon(Icons.AutoMirrored.Filled.Login, contentDescription = "Login")
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Google Login")
+                        }
+                    }
+                    
+                    // Show Logout if any session is active
+                    if (user != null) {
+                        TextButton(onClick = onLogoutClick) {
+                            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout")
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Logout")
+                        }
+                    }
+                }
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
@@ -76,10 +137,11 @@ fun DashboardScreen(
 
                 when (vehicleType) {
                     ConnectionState.VehicleType.ICE -> {
+                        val iceData = telemetry as? TelemetryRecord.Ice
                         item {
                             TelemetryCard(
                                 label = "RPM",
-                                value = telemetry?.rpm?.toString() ?: "---",
+                                value = iceData?.rpm?.toString() ?: "---",
                                 unit = "RPM",
                                 icon = Icons.Default.Speed,
                                 color = MaterialTheme.colorScheme.primary
@@ -88,7 +150,7 @@ fun DashboardScreen(
                         item {
                             TelemetryCard(
                                 label = "Coolant",
-                                value = telemetry?.coolantTemp?.toString() ?: "---",
+                                value = iceData?.coolantTemp?.toString() ?: "---",
                                 unit = "°C",
                                 icon = Icons.Default.DeviceThermostat,
                                 color = MaterialTheme.colorScheme.tertiary
@@ -96,10 +158,11 @@ fun DashboardScreen(
                         }
                     }
                     ConnectionState.VehicleType.EV -> {
+                        val evData = telemetry as? TelemetryRecord.Ev
                         item {
                             TelemetryCard(
                                 label = "SoC",
-                                value = telemetry?.soc?.toString() ?: "---",
+                                value = evData?.soc?.toString() ?: "---",
                                 unit = "%",
                                 icon = Icons.Default.BatteryChargingFull,
                                 color = MaterialTheme.colorScheme.primary
@@ -108,7 +171,7 @@ fun DashboardScreen(
                         item {
                             TelemetryCard(
                                 label = "Battery Temp",
-                                value = telemetry?.batteryTemp?.toString() ?: "---",
+                                value = evData?.batteryTemp?.toString() ?: "---",
                                 unit = "°C",
                                 icon = Icons.Default.ElectricCar,
                                 color = MaterialTheme.colorScheme.tertiary

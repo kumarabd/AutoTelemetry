@@ -68,6 +68,10 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.coroutines.guava)
 
+    // Play Services
+    implementation(libs.play.services.auth)
+    implementation(libs.play.services.location)
+
     // Firebase (BoM + Firestore/Auth)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore.ktx)
@@ -76,6 +80,9 @@ dependencies {
 
     // Charts
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+
+    // OBD API
+    implementation(libs.obd.api)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

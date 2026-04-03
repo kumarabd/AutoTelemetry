@@ -9,7 +9,8 @@ enum class VehicleAlertSeverity {
 enum class VehicleAlertType {
     COOLANT_OVERHEAT,
     HIGH_RPM,
-    IDLE_ANOMALY
+    IDLE_ANOMALY,
+    BATTERY_OVERHEAT
 }
 
 data class VehicleAlert(
@@ -19,4 +20,3 @@ data class VehicleAlert(
     val message: String,
     val severity: VehicleAlertSeverity
 )
-

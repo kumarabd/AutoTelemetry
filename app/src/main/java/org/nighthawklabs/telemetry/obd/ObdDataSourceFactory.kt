@@ -2,61 +2,86 @@ package org.nighthawklabs.telemetry.obd
 
 import android.bluetooth.BluetoothDevice
 import android.util.Log
+import com.github.eltonvs.obd.command.at.DescribeProtocolCommand
+import com.github.eltonvs.obd.command.at.DescribeProtocolNumberCommand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.nighthawklabs.telemetry.data.repository.IVehicleRepository
+import org.nighthawklabs.telemetry.model.VehicleMetadata
 import org.nighthawklabs.telemetry.obd.ev.EvObdDataSource
 import org.nighthawklabs.telemetry.obd.ice.IceObdDataSource
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.Scanner
 
 private const val TAG = "ObdDataSourceFactory"
 
 class ObdDataSourceFactory(
     private val connectionManager: ObdConnectionManager,
     private val commandExecutor: ObdCommandExecutor,
-    private val responseParser: ObdResponseParser
+    private val responseParser: ObdResponseParser,
+    private val vehicleRepository: IVehicleRepository
 ) {
 
     /**
      * Detects vehicle type by reading the VIN and decoding it using the NHTSA vPIC API.
-     * Defaults to EV if detection fails.
+     * Throws exception if initial connection fails.
      */
     suspend fun createDataSource(device: BluetoothDevice): ObdDataSource {
-        connectionManager.connect(device)
+        Log.d(TAG, "Creating data source for device: ${device.name} (${device.address})")
+        val connected = connectionManager.connect(device)
+        if (!connected) {
+            throw Exception("Could not establish Bluetooth connection to ${device.name ?: device.address}")
+        }
+
         return try {
+            Log.d(TAG, "Initializing OBD protocols via library...")
             commandExecutor.initializeObd()
             
-            val vinRaw = commandExecutor.sendCommand("0902")
-            val vin = responseParser.parseVin(vinRaw) ?: ""
-            Log.d(TAG, "Parsed VIN from vehicle: '$vin'")
+            // Warm up / Sync
+            Log.d(TAG, "Warming up connection (0100 - supported PIDs)...")
+            val pid0100Raw = commandExecutor.sendRawCommand("0100")
+            Log.i(TAG, "0100 raw response: '$pid0100Raw'")
 
-            val isEv = if (vin.isNotBlank()) {
-                decodeVehicleTypeFromVin(vin)
+            // Debug: Check which protocol was actually found
+            val protocolDesc = commandExecutor.executeCommand(DescribeProtocolCommand()) as? String
+            val protocolNum = commandExecutor.executeCommand(DescribeProtocolNumberCommand()) as? String
+            Log.i(TAG, "Current Protocol: $protocolDesc (Number: $protocolNum)")
+
+            Log.d(TAG, "Requesting VIN (0902)...")
+            val vinRaw = commandExecutor.sendRawCommand("0902")
+            Log.i(TAG, "0902 raw response: '$vinRaw'")
+            val vin = responseParser.parseVin(vinRaw) ?: ""
+            Log.i(TAG, "Final parsed VIN: '$vin'")
+
+            val metadata = if (vin.isNotBlank()) {
+                decodeVehicleMetadataFromVin(vin)
             } else {
-                Log.w(TAG, "Could not retrieve VIN, falling back to EV.")
-                true
+                Log.w(TAG, "VIN is empty. Falling back to default EV metadata.")
+                VehicleMetadata(vin = "", isEv = true)
             }
             
-            if (isEv) {
-                Log.d(TAG, "Using EV Data Source")
+            val vehicleId = if (vin.isNotBlank()) vin else device.address
+            vehicleRepository.saveVehicleMetadata(vehicleId, metadata)
+            
+            if (metadata.isEv) {
+                Log.i(TAG, "Classification: EV. Source: ${metadata.make ?: "Generic"} ${metadata.model ?: "EV"}")
                 EvObdDataSource(device, connectionManager, commandExecutor, responseParser)
             } else {
-                Log.d(TAG, "Using ICE Data Source")
+                Log.i(TAG, "Classification: ICE. Source: ${metadata.make ?: "Generic"} ${metadata.model ?: "ICE"}")
                 IceObdDataSource(device, connectionManager, commandExecutor, responseParser)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Detection process failed, defaulting to EV", e)
+            Log.e(TAG, "Detection failed. Defaulting to EV.", e)
             EvObdDataSource(device, connectionManager, commandExecutor, responseParser)
         } finally {
             connectionManager.disconnect()
         }
     }
 
-    private suspend fun decodeVehicleTypeFromVin(vin: String): Boolean = withContext(Dispatchers.IO) {
+    private suspend fun decodeVehicleMetadataFromVin(vin: String): VehicleMetadata = withContext(Dispatchers.IO) {
         try {
-            // NHTSA vPIC API: Decode VIN Values Extended
-            val url = URL("https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/$vin?format=json")
+            val urlString = "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/$vin?format=json"
+            val url = URL(urlString)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "GET"
             conn.connectTimeout = 5000
@@ -64,24 +89,38 @@ class ObdDataSourceFactory(
             
             if (conn.responseCode == 200) {
                 val responseBody = conn.inputStream.use { it.bufferedReader().readText() }
-                Log.d(TAG, "NHTSA API Response: $responseBody")
                 
-                // Simple check for "FuelTypePrimary" or "FuelTypeSecondary"
-                // Standard values include "Electric", "Gasoline", "Diesel", "Flexible Fuel Vehicle (FFV)"
-                // Note: Using string search to avoid adding a JSON library dependency if not strictly needed
-                val isElectric = responseBody.contains("\"FuelTypePrimary\":\"Electric\"", ignoreCase = true) ||
-                        responseBody.contains("\"FuelTypeSecondary\":\"Electric\"", ignoreCase = true) ||
-                        responseBody.contains("\"ElectrificationLevel\":\"Battery Electric Vehicle (BEV)\"", ignoreCase = true)
+                fun extractValue(key: String): String? {
+                    val pattern = "\"$key\":\"([^\"]*)\"".toRegex()
+                    return pattern.find(responseBody)?.groupValues?.get(1)
+                }
+
+                val make = extractValue("Make")
+                val model = extractValue("Model")
+                val yearStr = extractValue("ModelYear")
+                val fuelType = extractValue("FuelTypePrimary")
+                val electrification = extractValue("ElectrificationLevel")
+
+                val isElectric = fuelType?.contains("Electric", ignoreCase = true) == true ||
+                        electrification?.contains("Battery Electric Vehicle", ignoreCase = true) == true
                 
-                Log.i(TAG, "VIN decoding complete. Is Electric: $isElectric")
-                isElectric
+                Log.i(TAG, "Decoded: $make $model ($yearStr). IsEv: $isElectric")
+                
+                VehicleMetadata(
+                    vin = vin,
+                    make = make,
+                    model = model,
+                    year = yearStr?.toIntOrNull(),
+                    fuelType = fuelType,
+                    electrificationLevel = electrification,
+                    isEv = isElectric
+                )
             } else {
-                Log.w(TAG, "NHTSA API returned error code: ${conn.responseCode}. Falling back to EV.")
-                true
+                VehicleMetadata(vin = vin, isEv = true)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error decoding VIN via NHTSA API", e)
-            true // Fallback to EV as requested
+            Log.e(TAG, "NHTSA Error", e)
+            VehicleMetadata(vin = vin, isEv = true)
         }
     }
 }
